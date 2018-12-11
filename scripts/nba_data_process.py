@@ -117,33 +117,60 @@ def LastNCommonOpponents(n, df):
                         distance_b = i['GAME_DATE_EST_HOME'] - team_b_games[l]['GAME_DATE_EST_HOME']
                         total_distance = distance_a + distance_b
                         distances.append({
-                                            'game_a': team_a_games[k],
-                                            'game_b': team_b_games[l],
+                                            'game_a': team_a_games[k].to_frame().transpose(),
+                                            'game_b': team_b_games[l].to_frame().transpose(),
                                             'distance': total_distance
                                         })
         
         sorted_distances = sorted(distances, key=lambda x: x['distance']) 
         temp = (sorted_distances[:n])
         count = 0
+
         if len(temp) >= n:
-            for x in temp:
-                temp_a = x['game_a'].to_frame().transpose()
-                temp_a = temp_a.add_suffix('_COMMON_MATCHUP_A_' + str(count))
-                temp_a['CURRENT_GAME_ID'] = i['GAME_ID_HOME']
-                # temp_a['WIN_HOME'] = i['WIN_HOME']
-                # temp_a['GAME_DATE_EST'] = i['GAME_DATE_EST_HOME']
-                # temp_a['TEAM_NAME_HOME'] = i['TEAM_NAME_HOME']
-                # temp_a['TEAM_NAME_AWAY'] = i['TEAM_NAME_AWAY']
-                tuples_a = tuples_a.append(temp_a, sort=False)            
-                
-                temp_b = x['game_b'].to_frame().transpose()
-                temp_b = temp_b.add_suffix('_COMMON_MATCHUP_B_' + str(count))
-                temp_b['CURRENT_GAME_ID'] = i['GAME_ID_HOME']
-                tuples_b = tuples_b.append(temp_b, sort=False)  
-                count +=1 
+            previous_games_list_a = []
+            previous_games_list_b = []
+            [previous_games_list_a.append(d['game_a']) for d in temp]
+            [previous_games_list_b.append(d['game_b']) for d in temp]
+            previous_games_a = pd.concat(previous_games_list_a)
+            previous_games_b = pd.concat(previous_games_list_b)
+
+            tuples_a = pd.DataFrame()
+            first_tuple_a = previous_games_a.iloc[0]
+            first_tuple_a = first_tuple_a.add_suffix('_PREV_GAME_A_' + str(0))
+            first_tuple_a['CURRENT_GAME_ID'] = i['GAME_ID_HOME']
+            first_tuple_a['WIN_HOME'] = i['WIN_HOME']
+            first_tuple_a['GAME_DATE_EST'] = i['GAME_DATE_EST_HOME']
+            first_tuple_a['TEAM_NAME_HOME'] = i['TEAM_NAME_HOME']
+            first_tuple_a['TEAM_NAME_AWAY'] = i['TEAM_NAME_AWAY'] 
+            first_tuple_a['EXPERT_RANK_HOME'] = i['EXPERT_RANK_HOME'] 
+            first_tuple_a['EXPERT_RANK_AWAY'] = i['EXPERT_RANK_AWAY'] 
+            tuples_a = tuples_a.append(first_tuple_a)
+            previous_games_a = previous_games_a.iloc[1:]
+
+            for index4, k in previous_games_a.iterrows(): 
+                k = k.add_suffix('_PREV_GAME_A_' + str(index4))
+                k['CURRENT_GAME_ID'] = i['GAME_ID_HOME'] 
+                to_merge = k.to_frame().transpose()
+                to_merge['CURRENT_GAME_ID'] = to_merge['CURRENT_GAME_ID'].apply(int)
+                tuples_a['CURRENT_GAME_ID'] = tuples_a['CURRENT_GAME_ID'].apply(int)
+                tuples_a = pd.merge(tuples_a, to_merge, on=['CURRENT_GAME_ID'], sort=False)
             
-            if len(temp) > 0:
-                tuples = tuples.append(pd.merge(tuples_a, tuples_b, on=['CURRENT_GAME_ID'], sort=False))
+            tuples_b = pd.DataFrame()
+            first_tuple_b = previous_games_b.iloc[0]
+            first_tuple_b = first_tuple_b.add_suffix('_PREV_GAME_B_' + str(0))
+            first_tuple_b['CURRENT_GAME_ID'] = i['GAME_ID_HOME'] 
+            tuples_b = tuples_b.append(first_tuple_b)
+            previous_games_b = previous_games_b.iloc[1:]
+
+            for index5, l in previous_games_b.iterrows(): 
+                l = l.add_suffix('_PREV_GAME_B_' + str(index5))
+                l['CURRENT_GAME_ID'] = i['GAME_ID_HOME']
+                to_merge = l.to_frame().transpose()
+                to_merge['CURRENT_GAME_ID'] = to_merge['CURRENT_GAME_ID'].apply(int)
+                tuples_b['CURRENT_GAME_ID'] = tuples_b['CURRENT_GAME_ID'].apply(int) 
+                tuples_b = pd.merge(tuples_b, to_merge, on=['CURRENT_GAME_ID'], sort=False)
+
+            tuples = tuples.append(pd.merge(tuples_a, tuples_b, on=['CURRENT_GAME_ID'], sort=False))
         
         print ('COMPLETED ITERATION: ', iteration)
         iteration += 1
@@ -219,7 +246,7 @@ def LastNGames(n, df):
             tuples_b = tuples_b.append(first_tuple_b)
             previous_games_b = previous_games_b.iloc[1:]
 
-            for index5, l in previous_games_a.iterrows(): 
+            for index5, l in previous_games_b.iterrows(): 
                 l = l.add_suffix('_PREV_GAME_B_' + str(index5))
                 l['CURRENT_GAME_ID'] = i['GAME_ID_HOME']
                 to_merge = l.to_frame().transpose()
@@ -353,8 +380,7 @@ def GetNetRtgHome(x):
 def GetNetRtgAway(x):
     return x['OFF_RTG_AWAY'] - x['DEF_RTG_AWAY']
 
-def ReduceDimensions(df):
-    
+def GetNetRating(df):
     # Calculate OFF and DEF Rating 
     df['DEF_RTG_HOME'] = df.apply(GetDefRtgHome, axis=1)
     df['DEF_RTG_AWAY'] = df.apply(GetDefRtgAway, axis=1)
@@ -365,6 +391,9 @@ def ReduceDimensions(df):
     df['NET_RTG_HOME'] = df.apply(GetNetRtgHome, axis=1)
     df['NET_RTG_AWAY'] = df.apply(GetNetRtgAway, axis=1)
 
+    return df
+
+def ReduceDimensions(df):
     # Extract wanted columns
     cols = [c for c in df.columns if c == 'CURRENT_GAME_ID'
                                     or c == 'TEAM_NAME_HOME' 
@@ -375,17 +404,6 @@ def ReduceDimensions(df):
                                     or c == 'NET_RTG_AWAY'
                                     or c == 'EXPERT_RANK_HOME'
                                     or c == 'EXPERT_RANK_AWAY'
-                                    # or c == 'OFF_RTG_HOME'
-                                    # or c == 'OFF_RTG_AWAY'
-                                    # or c == 'DEF_RTG_HOME'
-                                    # or c == 'DEF_RTG_AWAY'
-                                    # or c[:3] == 'PTS' 
-                                    # or c[:3] == 'FGA'
-                                    # or c[:4] == 'FG3A'
-                                    # or c[:3] == 'FTA'
-                                    # or c[:4] == 'OREB'
-                                    # or c[:2] == 'TO'
-                                    # or c[:8] == 'WIN_AWAY'
             ]
     return df[cols]
 
@@ -404,47 +422,19 @@ def EncodeTeamName(df):
 # Main
 df_2019 = ImportData('../data/raw_stats/2018-2019_team_stats.csv', '../data/raw_stats/2018-2019_summary.csv')
 df_2018 = ImportData('../data/raw_stats/2017-2018_team_stats.csv', '../data/raw_stats/2017-2018_summary.csv')
-# df_2016 = ImportData('2015-2016_team_stats.csv', '2015-2016_summary.csv')
-# df_2015 = ImportData('2014-2015_team_stats.csv', '2014-2015_summary.csv')
 
 df = pd.DataFrame()
 df = df_2019
 df = df.append(df_2018, ignore_index=True)
-# df = df.append(df_2017, ignore_index=True)
-# df = df.append(df_2016, ignore_index=True)
-# df = df.append(df_2015, ignore_index=True)
-# print df
-# df = df[['GAME_ID_HOME', 'EXPERT_RANK_HOME', 'EXPERT_RANK_AWAY']]
-# df.to_csv("reddit_ranks.csv", index=False)
-# exit()
+df = df.head(300)
 
-# Reduce df size for testing
-#df = df.head(100)
+LAST_N = 2
+df= LastNCommonOpponents(2, df)
+df = df.drop_duplicates()
+print df
+df = GetNetRating(df)
+df = ReduceDimensions(df)
+print df
 
-# win_perc = GetWinPercentage(5, df)
-# win_perc = win_perc.drop_duplicates()
-# win_perc.to_csv('../data/outputs/2018-2019_win_percentage.csv', index=False)
-# print win_perc
 
-LAST_N = 3
-df1 = LastNGames(3, df)
-df1 = df1.drop_duplicates()
-df1 = ReduceDimensions(df1)
-df1['GAME_DATE_EST'] = pd.to_datetime(df1['GAME_DATE_EST'])
-df1['WIN_HOME'] = df1['WIN_HOME'].astype(int)
 
-LAST_N = 1
-df2= LastNCommonOpponents(1, df)
-df2 = df2.drop_duplicates()
-df2 = ReduceDimensions(df2)
-
-print df2
-
-merged = pd.merge(df1, df2, on=['CURRENT_GAME_ID'], sort=False)
-merged['NET_RTG_HOME'] = merged[['NET_RTG_HOME_x', 'NET_RTG_HOME_y']].mean(axis=1)
-merged['NET_RTG_AWAY'] = merged[['NET_RTG_AWAY_x', 'NET_RTG_AWAY_y']].mean(axis=1)
-merged = merged.drop(columns=['NET_RTG_HOME_x', 'NET_RTG_HOME_y'])
-merged = merged.drop(columns=['NET_RTG_AWAY_x', 'NET_RTG_AWAY_y'])
-merged.to_csv('../data/outputs/2018-2019_net_rating_v2.csv', index=False)
-print (merged)
-exit()
